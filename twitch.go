@@ -29,6 +29,8 @@ var playlistCache = map[string]pCache{}
 var urlExp = regexp.MustCompile("https?://.+")
 var m3SegmentExp = regexp.MustCompile("#EXTINF:.*live\n.+")
 
+var httpClient = &http.Client{Timeout: time.Minute}
+
 func FetchTwitchStream(channelName string, retries int) ([]string, error) {
 	if retries > 3 {
 		return nil, fmt.Errorf("failed fetching stream segments after %v tries", retries)
@@ -37,7 +39,7 @@ func FetchTwitchStream(channelName string, retries int) ([]string, error) {
 	d := playlistCache[channelName]
 
 	if time.Now().After(d.Expiry) {
-		res, err := http.Get(
+		res, err := httpClient.Get(
 			fmt.Sprintf("https://luminous.alienpls.org/live/%s?platform=web&allow_source=true&allow_audio_only=true", url.PathEscape(channelName)),
 		)
 		if err != nil {
@@ -63,7 +65,7 @@ func FetchTwitchStream(channelName string, retries int) ([]string, error) {
 		return nil, errors.New("no stream playlist available")
 	}
 
-	res, err := http.Get(streams[0])
+	res, err := httpClient.Get(streams[0])
 	if err != nil {
 		return nil, err
 	}
@@ -113,24 +115,27 @@ func MakeClip(channelName string) (string, error) {
 	var wg sync.WaitGroup
 	wg.Add(segmentCount)
 
+	var futile bool
 	ch := make(chan error, segmentCount)
 	for i, url := range segments {
 		go func(i int, url string) {
 			defer wg.Done()
 
-			res, err := http.Get(url)
-			if err != nil {
+			res, err := httpClient.Get(url)
+			if err != nil && !futile {
 				ch <- err
 				return
 			}
 
 			defer res.Body.Close()
 			buf, err := io.ReadAll(res.Body)
-			if err != nil {
-				ch <- err
-				return
+			if !futile {
+				if err != nil {
+					ch <- err
+					return
+				}
+				buffer[i] = buf
 			}
-			buffer[i] = buf
 		}(i, url)
 	}
 
@@ -141,6 +146,7 @@ func MakeClip(channelName string) (string, error) {
 
 	for err := range ch {
 		if err != nil {
+			futile = true
 			return "", err
 		}
 	}
