@@ -12,7 +12,7 @@ import (
 )
 
 const httpHost = "localhost:8989"
-const clipsDir = "/home/supa/Documents/git/twitch-clipper/clips"
+const clipsDir = "/var/www/fi.supa.sh/clips"
 
 func resError(w http.ResponseWriter, message string, statusCode int) {
 	m := map[string]interface{}{
