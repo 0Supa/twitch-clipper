@@ -6,16 +6,12 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"os/exec"
-	"path"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
 )
-
-var basePath = "/var/www/fi.supa.sh/clips"
 
 type pCache struct {
 	Expiry time.Time
@@ -99,7 +95,7 @@ func FetchTwitchStream(channelName string, retries int) ([]string, error) {
 	return segments, nil
 }
 
-func MakeClip(channelName string) (string, error) {
+func MakeClip(saveDir string, clipID string, channelName string) (string, error) {
 	segments, err := FetchTwitchStream(channelName, 1)
 	if err != nil {
 		return "", err
@@ -108,8 +104,7 @@ func MakeClip(channelName string) (string, error) {
 	segmentCount := len(segments)
 
 	format := "mp4"
-	clipID := time.Now().Unix()
-	clipPath := fmt.Sprintf("%s/%s/%v.%s", basePath, channelName, clipID, format)
+	clipPath := fmt.Sprintf("%s/%s.%s", saveDir, clipID, format)
 
 	buffer := make([][]byte, segmentCount)
 	var wg sync.WaitGroup
@@ -151,8 +146,6 @@ func MakeClip(channelName string) (string, error) {
 		}
 	}
 
-	os.MkdirAll(path.Dir(clipPath), os.ModePerm)
-
 	cmd := exec.Command("ffmpeg",
 		"-hide_banner",
 		"-f", "mpegts",
@@ -176,5 +169,5 @@ func MakeClip(channelName string) (string, error) {
 		return "", err
 	}
 
-	return fmt.Sprintf("%s/%v.%s", channelName, clipID, format), err
+	return fmt.Sprintf("%s/%s.%s", channelName, clipID, format), err
 }
