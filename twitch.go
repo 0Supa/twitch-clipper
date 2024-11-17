@@ -36,7 +36,7 @@ func FetchTwitchStream(channelName string, retries int) ([]string, error) {
 
 	if time.Now().After(d.Expiry) {
 		res, err := httpClient.Get(
-			fmt.Sprintf("https://luminous.alienpls.org/live/%s?platform=web&allow_source=true&allow_audio_only=true", url.PathEscape(channelName)),
+			fmt.Sprintf("https://twitch.nadeko.net/live/%s?platform=web&allow_source=true&allow_audio_only=true", url.PathEscape(channelName)),
 		)
 		if err != nil {
 			return nil, err
