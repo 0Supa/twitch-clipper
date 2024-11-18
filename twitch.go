@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -145,6 +146,8 @@ func MakeClip(saveDir string, clipID string, channelName string) (string, error)
 			return "", err
 		}
 	}
+
+	os.MkdirAll(saveDir, os.ModePerm)
 
 	cmd := exec.Command("ffmpeg",
 		"-hide_banner",

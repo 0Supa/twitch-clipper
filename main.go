@@ -35,10 +35,10 @@ func main() {
 
 		saveDir := fmt.Sprintf("%s/%s", clipsDir, channelName)
 
-		os.MkdirAll(saveDir, os.ModePerm)
-
 		createdAt := time.Now().UTC()
 		clipID := fmt.Sprintf("%v", createdAt.Unix())
+
+		var futile bool
 
 		query := r.URL.Query()
 		go func() {
@@ -50,18 +50,33 @@ func main() {
 				return
 			}
 
+			if clipInfo.Channel == nil {
+				futile = true
+				resError(w, "channel not found", 404)
+				return
+			}
+
 			data, err := json.Marshal(clipInfo)
 			if err != nil {
 				log.Println("clip info marshal failed", err)
 				return
 			}
 
+			os.MkdirAll(saveDir, os.ModePerm)
 			os.WriteFile(infoPath, data, 0644)
 		}()
 
 		path, err := MakeClip(saveDir, clipID, channelName)
+		if futile {
+			return
+		}
 		if err != nil {
-			resError(w, err.Error(), 500)
+			statusCode := 500
+			if err == ErrStreamNotFound {
+				statusCode = 404
+			}
+
+			resError(w, err.Error(), statusCode)
 			return
 		}
 
