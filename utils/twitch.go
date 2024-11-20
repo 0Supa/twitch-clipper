@@ -3,6 +3,7 @@ package utils
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 )
@@ -83,6 +84,11 @@ func fetchClipUsers(channelName string, userIDs ...string) (response twitchUsers
 func GetClipInfo(createdAt time.Time, channelName string, creatorID string, parentID string) (info ClipInfo, err error) {
 	res, err := fetchClipUsers(channelName, creatorID, parentID)
 	if err != nil {
+		return
+	}
+
+	if len(res.Data.Users) < 2 {
+		err = errors.New("upstream error")
 		return
 	}
 
