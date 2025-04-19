@@ -54,7 +54,7 @@ var httpClient = &http.Client{Timeout: 30 * time.Second}
 func fetchClipUsers(channelName string, userIDs ...string) (response twitchUsersResponse, err error) {
 	payload, err := json.Marshal(twitchGQLPayload{
 		OperationName: "Users",
-		Query:         "query Users($channel: String! $users: [ID!]!) { channel: user(login: $channel) { id login displayName broadcastSettings { game { id name } title } stream { createdAt isMature language } } users(ids: $users) { id login displayName } }",
+		Query:         "query Users($channel: String! $users: [ID!]! LookupType: ALL) { channel: user(login: $channel) { id login displayName broadcastSettings { game { id name } title } stream { createdAt isMature language } } users(ids: $users) { id login displayName } }",
 		Variables: map[string]any{
 			"channel": channelName,
 			"users":   userIDs,
