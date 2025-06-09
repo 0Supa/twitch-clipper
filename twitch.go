@@ -109,7 +109,6 @@ func MakeClip(saveDir string, clipID string, channelName string) (string, error)
 			defer wg.Done()
 
 			res, err := httpClient.Get(url)
-			fmt.Println(url)
 			if err != nil && !futile {
 				ch <- err
 				return
