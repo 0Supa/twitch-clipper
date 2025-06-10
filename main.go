@@ -56,6 +56,16 @@ func main() {
 				return
 			}
 
+			var clipLog strings.Builder
+			if clipInfo.Creator != nil {
+				clipLog.WriteString(fmt.Sprintf("@%s ", clipInfo.Creator.Login))
+			}
+			clipLog.WriteString(fmt.Sprintf("clipped #%s", clipInfo.Channel.Login))
+			if clipInfo.Parent != nil {
+				clipLog.WriteString(fmt.Sprintf(" from #%s", clipInfo.Parent.Login))
+			}
+			log.Println(clipLog.String())
+
 			data, err := json.Marshal(clipInfo)
 			if err != nil {
 				log.Println("clip info marshal failed", err)
