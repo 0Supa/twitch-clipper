@@ -98,6 +98,19 @@ func MakeClip(saveDir string, clipID string, channelName string) (string, error)
 	format := "mp4"
 	clipPath := fmt.Sprintf("%s/%s.%s", saveDir, clipID, format)
 
+	var mapBuf []byte
+	if playlist.Map != nil && playlist.Map.URI != "" {
+		res, err := httpClient.Get(playlist.Map.URI)
+		if err != nil {
+			return "", err
+		}
+		mapBuf, err = io.ReadAll(res.Body)
+		res.Body.Close()
+		if err != nil {
+			return "", err
+		}
+	}
+
 	buffer := make([][]byte, segmentCount)
 	var wg sync.WaitGroup
 	wg.Add(int(segmentCount))
@@ -142,7 +155,6 @@ func MakeClip(saveDir string, clipID string, channelName string) (string, error)
 
 	cmd := exec.Command("ffmpeg",
 		"-hide_banner",
-		"-f", "mpegts",
 		"-i", "-",
 		"-c:v", "copy", "-c:a", "copy", "-c:s", "copy",
 		"-f", format, clipPath)
@@ -152,6 +164,9 @@ func MakeClip(saveDir string, clipID string, channelName string) (string, error)
 	}
 
 	go func() {
+		if mapBuf != nil {
+			stdin.Write(mapBuf)
+		}
 		for _, d := range buffer {
 			stdin.Write(d)
 		}
