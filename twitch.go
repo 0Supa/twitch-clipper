@@ -8,30 +8,27 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"path"
-	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/grafov/m3u8"
 )
 
-var basePath = "/var/www/fi.supa.sh/clips"
-
 type pCache struct {
-	Expiry time.Time
-	Body   string
+	Expiry         time.Time
+	MasterPlaylist *m3u8.MasterPlaylist
 }
 
 var ErrStreamNotFound = errors.New("stream not found")
 
 var playlistCache = map[string]pCache{}
 
-var urlExp = regexp.MustCompile("https?://.+")
-var m3SegmentExp = regexp.MustCompile("#EXTINF:.*live\n.+")
-
 var httpClient = &http.Client{Timeout: time.Minute}
 
-func FetchTwitchStream(channelName string, retries int) ([]string, error) {
+func FetchTwitchStream(channelName string, retries int) (*m3u8.MediaPlaylist, error) {
 	if retries > 3 {
 		return nil, fmt.Errorf("failed fetching stream segments after %v tries", retries)
 	}
@@ -47,77 +44,80 @@ func FetchTwitchStream(channelName string, retries int) ([]string, error) {
 		}
 
 		defer res.Body.Close()
-		buf, err := io.ReadAll(res.Body)
+
+		if res.StatusCode == http.StatusNotFound {
+			return nil, ErrStreamNotFound
+		} else if res.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("proxy -> bad status code (%v)", res.StatusCode)
+		}
+
+		p, _, err := m3u8.DecodeFrom(res.Body, false)
 		if err != nil {
 			return nil, err
 		}
 
-		d.Body = string(buf)
-		if res.StatusCode == http.StatusNotFound {
-			return nil, ErrStreamNotFound
-		} else if res.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("proxy -> bad status code (%v):\n%s", res.StatusCode, d.Body)
-		}
+		d.MasterPlaylist = p.(*m3u8.MasterPlaylist)
 	}
 
-	streams := urlExp.FindAllString(d.Body, 1)
-	if len(streams) == 0 {
+	variants := d.MasterPlaylist.Variants
+
+	if len(variants) == 0 {
 		return nil, errors.New("no stream playlist available")
 	}
 
-	res, err := httpClient.Get(streams[0])
+	SortVariantsByResolution(variants)
+
+	res, err := httpClient.Get(variants[0].URI)
 	if err != nil {
 		return nil, err
 	}
+	defer res.Body.Close()
 
-	if res.StatusCode != http.StatusOK {
+	mediaPlaylist, _, err := m3u8.DecodeFrom(res.Body, true)
+	if err != nil {
 		d.Expiry = time.Now()
 		playlistCache[channelName] = d
 		return FetchTwitchStream(channelName, retries+1)
-	}
-
-	defer res.Body.Close()
-	buf, err := io.ReadAll(res.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	filter := m3SegmentExp.FindAllString(string(buf), -1)
-	if len(filter) == 0 {
-		return FetchTwitchStream(channelName, retries+1)
-	}
-
-	segments := []string{}
-	for _, s := range filter {
-		segments = append(segments, s[strings.Index(s, "\n")+1:])
 	}
 
 	d.Expiry = time.Now().Add(time.Hour)
 
 	playlistCache[channelName] = d
 
-	return segments, nil
+	return mediaPlaylist.(*m3u8.MediaPlaylist), nil
 }
 
-func MakeClip(channelName string) (string, error) {
-	segments, err := FetchTwitchStream(channelName, 1)
+func MakeClip(saveDir string, clipID string, channelName string) (string, error) {
+	playlist, err := FetchTwitchStream(channelName, 1)
 	if err != nil {
 		return "", err
 	}
 
-	segmentCount := len(segments)
+	segmentCount := playlist.Count()
 
 	format := "mp4"
-	clipID := time.Now().Unix()
-	clipPath := fmt.Sprintf("%s/%s/%v.%s", basePath, channelName, clipID, format)
+	clipPath := fmt.Sprintf("%s/%s.%s", saveDir, clipID, format)
+
+	var mapBuf []byte
+	if playlist.Map != nil && playlist.Map.URI != "" {
+		res, err := httpClient.Get(playlist.Map.URI)
+		if err != nil {
+			return "", err
+		}
+		mapBuf, err = io.ReadAll(res.Body)
+		res.Body.Close()
+		if err != nil {
+			return "", err
+		}
+	}
 
 	buffer := make([][]byte, segmentCount)
 	var wg sync.WaitGroup
-	wg.Add(segmentCount)
+	wg.Add(int(segmentCount))
 
 	var futile bool
 	ch := make(chan error, segmentCount)
-	for i, url := range segments {
+	for i, seg := range playlist.Segments[:segmentCount] {
 		go func(i int, url string) {
 			defer wg.Done()
 
@@ -136,7 +136,7 @@ func MakeClip(channelName string) (string, error) {
 				}
 				buffer[i] = buf
 			}
-		}(i, url)
+		}(i, seg.URI)
 	}
 
 	go func() {
@@ -151,11 +151,10 @@ func MakeClip(channelName string) (string, error) {
 		}
 	}
 
-	os.MkdirAll(path.Dir(clipPath), os.ModePerm)
+	os.MkdirAll(saveDir, os.ModePerm)
 
 	cmd := exec.Command("ffmpeg",
 		"-hide_banner",
-		"-f", "mpegts",
 		"-i", "-",
 		"-c:v", "copy", "-c:a", "copy", "-c:s", "copy",
 		"-f", format, clipPath)
@@ -165,6 +164,9 @@ func MakeClip(channelName string) (string, error) {
 	}
 
 	go func() {
+		if mapBuf != nil {
+			stdin.Write(mapBuf)
+		}
 		for _, d := range buffer {
 			stdin.Write(d)
 		}
@@ -176,5 +178,25 @@ func MakeClip(channelName string) (string, error) {
 		return "", err
 	}
 
-	return fmt.Sprintf("%s/%v.%s", channelName, clipID, format), err
+	return fmt.Sprintf("%s/%s.%s", channelName, clipID, format), err
+}
+
+func SortVariantsByResolution(variants []*m3u8.Variant) {
+	parseRes := func(res string) (w, h int) {
+		parts := strings.Split(res, "x")
+		if len(parts) != 2 {
+			return 0, 0
+		}
+		w, _ = strconv.Atoi(parts[0])
+		h, _ = strconv.Atoi(parts[1])
+		return
+	}
+	sort.SliceStable(variants, func(i, j int) bool {
+		w1, h1 := parseRes(variants[i].Resolution)
+		w2, h2 := parseRes(variants[j].Resolution)
+		if w1 != w2 {
+			return w1 > w2
+		}
+		return h1 > h2
+	})
 }

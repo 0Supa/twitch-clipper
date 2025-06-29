@@ -2,12 +2,17 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
+	"time"
+	"twitch-clipper/utils"
 )
 
-var httpAddr = "localhost:8989"
+const httpHost = "localhost:8989"
+const clipsDir = "/var/www/fi.supa.sh/clips"
 
 func resError(w http.ResponseWriter, message string, statusCode int) {
 	m := map[string]interface{}{
@@ -28,9 +33,60 @@ func main() {
 			return
 		}
 
-		path, err := MakeClip(channelName)
+		saveDir := fmt.Sprintf("%s/%s", clipsDir, channelName)
+
+		createdAt := time.Now().UTC()
+		clipID := fmt.Sprintf("%v", createdAt.Unix())
+
+		var futile bool
+
+		query := r.URL.Query()
+		go func() {
+			infoPath := fmt.Sprintf("%s/%s.info.json", saveDir, clipID)
+
+			clipInfo, err := utils.GetClipInfo(createdAt, channelName, query.Get("creator_id"), query.Get("parent_id"))
+			if err != nil {
+				log.Println("clip info failed", err)
+				return
+			}
+
+			if clipInfo.Channel == nil {
+				futile = true
+				resError(w, "channel not found", 404)
+				return
+			}
+
+			var clipLog strings.Builder
+			if clipInfo.Creator != nil {
+				clipLog.WriteString(fmt.Sprintf("@%s ", clipInfo.Creator.Login))
+			}
+			clipLog.WriteString(fmt.Sprintf("clipped #%s", clipInfo.Channel.Login))
+			if clipInfo.Parent != nil {
+				clipLog.WriteString(fmt.Sprintf(" from #%s", clipInfo.Parent.Login))
+			}
+			log.Println(clipLog.String())
+
+			data, err := json.Marshal(clipInfo)
+			if err != nil {
+				log.Println("clip info marshal failed", err)
+				return
+			}
+
+			os.MkdirAll(saveDir, os.ModePerm)
+			os.WriteFile(infoPath, data, 0644)
+		}()
+
+		path, err := MakeClip(saveDir, clipID, channelName)
+		if futile {
+			return
+		}
 		if err != nil {
-			resError(w, err.Error(), 500)
+			statusCode := 500
+			if err == ErrStreamNotFound {
+				statusCode = 404
+			}
+
+			resError(w, err.Error(), statusCode)
 			return
 		}
 
@@ -41,7 +97,7 @@ func main() {
 		json.NewEncoder(w).Encode(m)
 	})
 
-	log.Println("Server running on " + httpAddr)
+	log.Println("Server running on " + httpHost)
 
-	log.Fatal(http.ListenAndServe(httpAddr, nil))
+	log.Fatal(http.ListenAndServe(httpHost, nil))
 }
