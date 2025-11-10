@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"twitch-clipper/clipper"
 	"twitch-clipper/kick"
 	"twitch-clipper/twitch"
 )
@@ -47,8 +48,13 @@ func main() {
 		if query.Get("platform") == "kick" {
 			clipInfo, err := kick.GetClipInfo(createdAt, channelName)
 			if err != nil {
+				statusCode := 500
+				if err == clipper.ErrStreamNotFound {
+					statusCode = 404
+				}
+
 				log.Println("kick clip info failed", err)
-				resError(w, "failed to fetch clip info: "+err.Error(), 500)
+				resError(w, "failed to fetch clip info: "+err.Error(), statusCode)
 				return
 			}
 
@@ -101,10 +107,10 @@ func main() {
 		os.MkdirAll(saveDir, os.ModePerm)
 		os.WriteFile(infoPath, data, 0644)
 
-		playlist, err := FetchPlaylist(playlistURL, 0)
+		playlist, err := clipper.FetchPlaylist(playlistURL, 0)
 		if err != nil {
 			statusCode := 500
-			if err == ErrStreamNotFound {
+			if err == clipper.ErrStreamNotFound {
 				statusCode = 404
 			}
 
@@ -112,7 +118,7 @@ func main() {
 			return
 		}
 
-		path, err := MakeClip(saveDir, clipID, channelName, playlist)
+		path, err := clipper.MakeClip(saveDir, clipID, channelName, playlist)
 		if err != nil {
 			resError(w, err.Error(), 500)
 			return

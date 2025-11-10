@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+	"twitch-clipper/clipper"
 
 	"github.com/RomainMichau/cloudscraper_go/cloudscraper"
 )
@@ -42,7 +43,11 @@ func fetchChannel(channelName string) (response channel, err error) {
 	}
 
 	if res.Status/100 != 2 {
-		err = fmt.Errorf("bad status code from kick (%v)", res.Status)
+		if res.Status == 404 {
+			err = clipper.ErrStreamNotFound
+		} else {
+			err = fmt.Errorf("bad status code from kick (%v)", res.Status)
+		}
 		return
 	}
 
