@@ -10,18 +10,35 @@ import (
 )
 
 type channel struct {
-	ID          int    `json:"id"`
-	UserID      int    `json:"user_id"`
-	Slug        string `json:"slug"`
-	PlaybackURL string `json:"playback_url"`
+	ID     int    `json:"id"`
+	UserID int    `json:"user_id"`
+	Slug   string `json:"slug"`
+	User   struct {
+		Username string `json:"username"`
+	} `json:"user"`
+	PlaybackURL string `json:"playback_url,omitempty"`
 	Livestream  struct {
-		ID        int    `json:"id"`
-		CreatedAt string `json:"created_at"`
-		Title     string `json:"session_title"`
-		IsLive    bool   `json:"is_live"`
-		IsMature  bool   `json:"is_mature"`
-		Language  string `json:"language"`
+		ID         int        `json:"id"`
+		Slug       string     `json:"slug"`
+		CreatedAt  string     `json:"created_at"`
+		Title      string     `json:"session_title"`
+		IsLive     bool       `json:"is_live"`
+		IsMature   bool       `json:"is_mature"`
+		Language   string     `json:"language"`
+		Categories []category `json:"categories"`
 	} `json:"livestream"`
+}
+
+type category struct {
+	ID         int    `json:"id"`
+	CategoryID int    `json:"category_id"`
+	Slug       string `json:"slug"`
+	Name       string `json:"name"`
+	Category   struct {
+		ID   int    `json:"id"`
+		Slug string `json:"slug"`
+		Name string `json:"name"`
+	} `json:"category"`
 }
 
 type ClipInfo struct {

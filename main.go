@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -49,7 +50,7 @@ func main() {
 			clipInfo, err := kick.GetClipInfo(createdAt, channelName)
 			if err != nil {
 				statusCode := 500
-				if err == clipper.ErrStreamNotFound {
+				if errors.Is(err, clipper.ErrStreamNotFound) {
 					statusCode = 404
 				}
 
@@ -64,6 +65,8 @@ func main() {
 			}
 
 			playlistURL = clipInfo.Channel.PlaybackURL
+
+			clipInfo.Channel.PlaybackURL = "" // remove playback URL from saved info
 
 			log.Printf("clipped kick/%s\n", clipInfo.Channel.Slug)
 
@@ -104,13 +107,10 @@ func main() {
 			}
 		}
 
-		os.MkdirAll(saveDir, os.ModePerm)
-		os.WriteFile(infoPath, data, 0644)
-
 		playlist, err := clipper.FetchPlaylist(playlistURL, 0)
 		if err != nil {
 			statusCode := 500
-			if err == clipper.ErrStreamNotFound {
+			if errors.Is(err, clipper.ErrStreamNotFound) {
 				statusCode = 404
 			}
 
@@ -123,6 +123,8 @@ func main() {
 			resError(w, err.Error(), 500)
 			return
 		}
+
+		os.WriteFile(infoPath, data, 0644)
 
 		m := map[string]interface{}{
 			"path": path,
