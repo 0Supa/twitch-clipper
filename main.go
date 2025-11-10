@@ -8,7 +8,8 @@ import (
 	"os"
 	"strings"
 	"time"
-	"twitch-clipper/utils"
+	"twitch-clipper/kick"
+	"twitch-clipper/twitch"
 )
 
 const httpHost = "localhost:8989"
@@ -38,48 +39,69 @@ func main() {
 		createdAt := time.Now().UTC()
 		clipID := fmt.Sprintf("%v", createdAt.Unix())
 
-		var futile bool
-
 		query := r.URL.Query()
-		go func() {
-			infoPath := fmt.Sprintf("%s/%s.info.json", saveDir, clipID)
+		infoPath := fmt.Sprintf("%s/%s.info.json", saveDir, clipID)
 
-			clipInfo, err := utils.GetClipInfo(createdAt, channelName, query.Get("creator_id"), query.Get("parent_id"))
+		var playlistURL string
+		var data []byte
+		if query.Get("platform") == "kick" {
+			clipInfo, err := kick.GetClipInfo(createdAt, channelName)
 			if err != nil {
-				log.Println("clip info failed", err)
+				log.Println("kick clip info failed", err)
+				resError(w, "failed to fetch clip info: "+err.Error(), 500)
+				return
+			}
+
+			if clipInfo.Channel.ID == 0 {
+				resError(w, "channel not found", 404)
+				return
+			}
+
+			playlistURL = clipInfo.Channel.PlaybackURL
+
+			log.Printf("clipped kick/%s\n", clipInfo.Channel.Slug)
+
+			data, err = json.Marshal(clipInfo)
+			if err != nil {
+				log.Println("clip info marshal failed", err)
+				return
+			}
+		} else {
+			clipInfo, err := twitch.GetClipInfo(createdAt, channelName, query.Get("creator_id"), query.Get("parent_id"))
+			if err != nil {
+				log.Println("twitch clip info failed", err)
+				resError(w, "failed to fetch clip info: "+err.Error(), 500)
 				return
 			}
 
 			if clipInfo.Channel == nil {
-				futile = true
 				resError(w, "channel not found", 404)
 				return
 			}
+
+			playlistURL = fmt.Sprintf("https://luminous.alienpls.org/live/%s?platform=web&allow_source=true&allow_audio_only=true", channelName)
 
 			var clipLog strings.Builder
 			if clipInfo.Creator != nil {
 				clipLog.WriteString(fmt.Sprintf("@%s ", clipInfo.Creator.Login))
 			}
-			clipLog.WriteString(fmt.Sprintf("clipped #%s", clipInfo.Channel.Login))
+			clipLog.WriteString(fmt.Sprintf("clipped twitch/%s", clipInfo.Channel.Login))
 			if clipInfo.Parent != nil {
 				clipLog.WriteString(fmt.Sprintf(" from #%s", clipInfo.Parent.Login))
 			}
 			log.Println(clipLog.String())
 
-			data, err := json.Marshal(clipInfo)
+			data, err = json.Marshal(clipInfo)
 			if err != nil {
 				log.Println("clip info marshal failed", err)
 				return
 			}
-
-			os.MkdirAll(saveDir, os.ModePerm)
-			os.WriteFile(infoPath, data, 0644)
-		}()
-
-		path, err := MakeClip(saveDir, clipID, channelName)
-		if futile {
-			return
 		}
+
+		os.MkdirAll(saveDir, os.ModePerm)
+		os.WriteFile(infoPath, data, 0644)
+
+		playlist, err := FetchPlaylist(playlistURL, 0)
 		if err != nil {
 			statusCode := 500
 			if err == ErrStreamNotFound {
@@ -87,6 +109,12 @@ func main() {
 			}
 
 			resError(w, err.Error(), statusCode)
+			return
+		}
+
+		path, err := MakeClip(saveDir, clipID, channelName, playlist)
+		if err != nil {
+			resError(w, err.Error(), 500)
 			return
 		}
 

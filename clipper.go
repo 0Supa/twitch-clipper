@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"sort"
@@ -28,17 +27,15 @@ var playlistCache = map[string]pCache{}
 
 var httpClient = &http.Client{Timeout: time.Minute}
 
-func FetchTwitchStream(channelName string, retries int) (*m3u8.MediaPlaylist, error) {
+func FetchPlaylist(url string, retries int) (*m3u8.MediaPlaylist, error) {
 	if retries > 3 {
 		return nil, fmt.Errorf("failed fetching stream segments after %v tries", retries)
 	}
 
-	d := playlistCache[channelName]
+	d := playlistCache[url]
 
 	if time.Now().After(d.Expiry) {
-		res, err := httpClient.Get(
-			fmt.Sprintf("https://luminous.alienpls.org/live/%s?platform=web&allow_source=true&allow_audio_only=true", url.PathEscape(channelName)),
-		)
+		res, err := httpClient.Get(url)
 		if err != nil {
 			return nil, err
 		}
@@ -48,7 +45,7 @@ func FetchTwitchStream(channelName string, retries int) (*m3u8.MediaPlaylist, er
 		if res.StatusCode == http.StatusNotFound {
 			return nil, ErrStreamNotFound
 		} else if res.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("proxy -> bad status code (%v)", res.StatusCode)
+			return nil, fmt.Errorf("bad status code (%v)", res.StatusCode)
 		}
 
 		p, _, err := m3u8.DecodeFrom(res.Body, false)
@@ -76,23 +73,18 @@ func FetchTwitchStream(channelName string, retries int) (*m3u8.MediaPlaylist, er
 	mediaPlaylist, _, err := m3u8.DecodeFrom(res.Body, true)
 	if err != nil {
 		d.Expiry = time.Now()
-		playlistCache[channelName] = d
-		return FetchTwitchStream(channelName, retries+1)
+		playlistCache[url] = d
+		return FetchPlaylist(url, retries+1)
 	}
 
 	d.Expiry = time.Now().Add(time.Hour)
 
-	playlistCache[channelName] = d
+	playlistCache[url] = d
 
 	return mediaPlaylist.(*m3u8.MediaPlaylist), nil
 }
 
-func MakeClip(saveDir string, clipID string, channelName string) (string, error) {
-	playlist, err := FetchTwitchStream(channelName, 1)
-	if err != nil {
-		return "", err
-	}
-
+func MakeClip(saveDir string, clipID string, channelName string, playlist *m3u8.MediaPlaylist) (string, error) {
 	segmentCount := playlist.Count()
 
 	format := "mp4"

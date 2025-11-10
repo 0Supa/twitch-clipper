@@ -1,4 +1,4 @@
-package utils
+package twitch
 
 import (
 	"bytes"
@@ -8,9 +8,9 @@ import (
 	"time"
 )
 
-const twitchClientID = "ue6666qo983tsx6so1t0vnawi233wa"
+const clientID = "ue6666qo983tsx6so1t0vnawi233wa"
 
-type twitchGQLPayload struct {
+type gqlPayload struct {
 	OperationName string `json:"operationName"`
 	Query         string `json:"query"`
 	Variables     any    `json:"variables"`
@@ -34,7 +34,7 @@ type userData struct {
 	} `json:"stream,omitempty"`
 }
 
-type twitchUsersResponse struct {
+type usersResponse struct {
 	Data struct {
 		Channel *userData   `json:"channel"`
 		Users   []*userData `json:"users"`
@@ -51,8 +51,8 @@ type ClipInfo struct {
 
 var httpClient = &http.Client{Timeout: 30 * time.Second}
 
-func fetchClipUsers(channelName string, userIDs ...string) (response twitchUsersResponse, err error) {
-	payload, err := json.Marshal(twitchGQLPayload{
+func fetchClipUsers(channelName string, userIDs ...string) (response usersResponse, err error) {
+	payload, err := json.Marshal(gqlPayload{
 		OperationName: "Users",
 		Query:         "query Users($channel: String! $users: [ID!]!) { channel: user(login: $channel) { id login displayName broadcastSettings { game { id name } title } stream { createdAt isMature language } } users(ids: $users) { id login displayName } }",
 		Variables: map[string]any{
@@ -65,7 +65,7 @@ func fetchClipUsers(channelName string, userIDs ...string) (response twitchUsers
 	}
 
 	req, _ := http.NewRequest("POST", "https://gql.twitch.tv/gql", bytes.NewBuffer(payload))
-	req.Header.Set("Client-Id", twitchClientID)
+	req.Header.Set("Client-Id", clientID)
 
 	res, err := httpClient.Do(req)
 	if err != nil {
