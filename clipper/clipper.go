@@ -114,8 +114,10 @@ func MakeClip(saveDir string, clipID string, channelName string, playlist *m3u8.
 			defer wg.Done()
 
 			res, err := httpClient.Get(url)
-			if err != nil && !futile {
-				ch <- err
+			if err != nil {
+				if !futile {
+					ch <- err
+				}
 				return
 			}
 
