@@ -64,6 +64,11 @@ func main() {
 				return
 			}
 
+			if !clipInfo.Channel.Livestream.IsLive {
+				resError(w, clipper.ErrStreamNotFound.Error(), 404)
+				return
+			}
+
 			playlistURL = clipInfo.Channel.PlaybackURL
 
 			clipInfo.Channel.PlaybackURL = "" // remove playback URL from saved info
